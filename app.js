@@ -1,7 +1,7 @@
 /* StarFit — workout log PWA (local-first) */
 'use strict';
 
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.2';
 const STORE_KEY = 'starfit-v1';
 
 /* ============ Data helpers ============ */

@@ -412,15 +412,20 @@ body[data-view="calendar"] .view-calendar {
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  /* Up to 6 week rows; equal height so month fits viewport */
-  grid-auto-rows: 1fr;
+  /* Equal row heights; shrink to fit viewport (no page scroll) */
+  grid-auto-rows: minmax(0, 1fr);
   gap: 3px;
   flex: 1 1 auto;
-  min-height: 0;
-  /* Cap height: leave room for toolbar + weekdays + total + legend */
+  min-height: 180px;
+  width: 100%;
+  /* Hard height so 1fr rows resolve on all browsers */
+  height: min(
+    400px,
+    calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-t) - var(--safe-b) - 150px)
+  );
   max-height: min(
-    420px,
-    calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-t) - var(--safe-b) - 148px)
+    400px,
+    calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-t) - var(--safe-b) - 150px)
   );
 }
 .cal-cell {
