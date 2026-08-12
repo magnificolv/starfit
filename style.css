@@ -55,11 +55,13 @@ button {
 
 .app {
   min-height: 100dvh;
+  height: 100dvh;
   max-width: 560px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: hidden;
   background:
     radial-gradient(ellipse 80% 40% at 50% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
     radial-gradient(ellipse 50% 30% at 90% 20%, rgba(232, 121, 249, 0.08), transparent 50%),
@@ -69,6 +71,7 @@ button {
 /* Topbar */
 .topbar {
   height: var(--top-h);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -133,15 +136,16 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--line);
   background: rgba(12, 12, 22, 0.6);
+  flex-shrink: 0;
 }
 .day-nav {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   color: var(--cyan);
   display: inline-flex;
   align-items: center;
@@ -153,9 +157,9 @@ button {
   text-align: center;
   font-weight: 700;
   letter-spacing: 0.12em;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   color: var(--text);
-  padding: 8px;
+  padding: 6px;
   border-radius: 10px;
 }
 .day-label:active { background: var(--bg-soft); }
@@ -164,8 +168,23 @@ button {
 .main {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
   padding: 12px 14px calc(var(--nav-h) + var(--safe-b) + 16px);
   -webkit-overflow-scrolling: touch;
+}
+/* Calendar: no scroll — fill remaining viewport */
+body[data-view="calendar"] .main {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px calc(var(--nav-h) + var(--safe-b) + 8px);
+}
+body[data-view="calendar"] .view-calendar {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: none;
 }
 .view { animation: fadeIn 0.18s ease; }
 @keyframes fadeIn {
@@ -354,49 +373,73 @@ button {
   text-shadow: 0 0 12px rgba(167, 139, 250, 0.45);
 }
 
-/* Calendar */
+/* Calendar — fit full month on one screen (mobile + PC) */
 .cal-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.cal-toolbar .day-nav {
+  width: 36px;
+  height: 36px;
+  font-size: 1.35rem;
 }
 .cal-month-title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 .cal-weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 3px;
   margin-bottom: 4px;
   text-align: center;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  color: var(--text-mute);
-  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  opacity: 1;
+}
+.cal-weekdays div {
+  padding: 2px 0;
+  color: #a5b0d0;
 }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  /* Up to 6 week rows; equal height so month fits viewport */
+  grid-auto-rows: 1fr;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Cap height: leave room for toolbar + weekdays + total + legend */
+  max-height: min(
+    420px,
+    calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-t) - var(--safe-b) - 148px)
+  );
 }
 .cal-cell {
-  aspect-ratio: 1;
-  border-radius: 14px;
+  /* No aspect-ratio — rows shrink to available height */
+  min-height: 0;
+  height: 100%;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   color: var(--text-dim);
-  font-size: 0.9rem;
+  font-size: clamp(0.72rem, 2.6vw, 0.9rem);
   font-weight: 600;
   position: relative;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid transparent;
+  padding: 2px 0;
 }
 .cal-cell.empty { visibility: hidden; }
 .cal-cell.has { color: var(--text); background: var(--bg-card); border: 1px solid var(--line); }
@@ -411,41 +454,46 @@ button {
 .cal-dots {
   display: flex;
   gap: 2px;
-  min-height: 6px;
+  min-height: 5px;
+  max-height: 8px;
+  align-items: center;
 }
 .cal-dots i {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   display: block;
+  flex-shrink: 0;
 }
 .cal-total {
   text-align: center;
   color: var(--text-mute);
-  font-size: 0.85rem;
-  margin: 16px 0 8px;
+  font-size: 0.72rem;
+  margin: 8px 0 4px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px 10px;
   justify-content: center;
-  padding: 8px 0 20px;
+  padding: 2px 0 0;
+  flex-shrink: 0;
 }
 .legend span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
+  gap: 5px;
+  font-size: 0.68rem;
   color: var(--text-dim);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
 }
 .legend i {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
 

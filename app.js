@@ -1,7 +1,7 @@
 /* StarFit — workout log PWA (local-first) */
 'use strict';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const STORE_KEY = 'starfit-v1';
 
 /* ============ Data helpers ============ */
@@ -227,6 +227,9 @@ function switchView(view) {
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.nav === view));
   const subs = { today: 'Šodien', calendar: 'Kalendārs', exercises: 'Vingrinājumi', stats: 'Progress' };
   els.topSubtitle.textContent = subs[view] || '';
+  // Day strip only on Log; frees vertical space for calendar fit-on-screen
+  if (els.dayStrip) els.dayStrip.classList.toggle('hidden', view !== 'today');
+  document.body.dataset.view = view;
   if (view === 'calendar') { if (!state.calSelected) state.calSelected = toISO(state.selDate); renderCalendar(); }
   if (view === 'exercises') { els.exSearch.value = state.exSearch; renderExerciseBrowser(); }
   if (view === 'stats') renderStats();
