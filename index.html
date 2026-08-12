@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>StarFit — Workout Log</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=110" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=110" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=110" />
+  <link rel="manifest" href="manifest.json?v=110" />
+  <meta name="theme-color" content="#06060c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="StarFit" />
+  <meta name="description" content="Modern dark workout log — FitNotes spirit. Sets, calendar, graphs. Local-first." />
+  <link rel="stylesheet" href="style.css?v=110" />
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- Top bar -->
+    <header class="topbar" id="topbar">
+      <div class="brand" id="brandHome">
+        <img class="brand-mark" src="icons/brand-mark.png?v=110" width="32" height="32" alt="" />
+        <div class="brand-text">
+          <span class="brand-title">Star<span class="accent">Fit</span></span>
+          <span class="brand-sub" id="topSubtitle">Šodien</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button type="button" class="icon-btn" id="btnRest" title="Rest timer" aria-label="Rest timer">⏱</button>
+        <button type="button" class="icon-btn" id="btnSettings" title="Iestatījumi" aria-label="Settings">⚙</button>
+      </div>
+    </header>
+
+    <!-- Day strip (today view) -->
+    <div class="day-strip" id="dayStrip">
+      <button type="button" class="day-nav" id="dayPrev" aria-label="Previous day">‹</button>
+      <button type="button" class="day-label" id="dayLabel">TODAY</button>
+      <button type="button" class="day-nav" id="dayNext" aria-label="Next day">›</button>
+    </div>
+
+    <!-- Main views -->
+    <main class="main" id="main">
+      <!-- TODAY -->
+      <section class="view view-today" id="viewToday" data-view="today">
+        <div id="todayContent"></div>
+      </section>
+
+      <!-- CALENDAR -->
+      <section class="view view-calendar hidden" id="viewCalendar" data-view="calendar">
+        <div class="cal-toolbar">
+          <button type="button" class="day-nav" id="calPrev">‹</button>
+          <h2 class="cal-month-title" id="calMonthTitle">—</h2>
+          <button type="button" class="day-nav" id="calNext">›</button>
+        </div>
+        <div class="cal-weekdays" id="calWeekdays"></div>
+        <div class="cal-grid" id="calGrid"></div>
+        <p class="cal-total" id="calTotal">0 workouts</p>
+        <div class="legend" id="calLegend"></div>
+      </section>
+
+      <!-- EXERCISES -->
+      <section class="view view-exercises hidden" id="viewExercises" data-view="exercises">
+        <div class="search-wrap">
+          <input type="search" id="exSearch" class="search-input" placeholder="Meklēt vingrinājumu…" autocomplete="off" />
+        </div>
+        <div id="exBrowser"></div>
+      </section>
+
+      <!-- STATS / progress overview -->
+      <section class="view view-stats hidden" id="viewStats" data-view="stats">
+        <div id="statsContent"></div>
+      </section>
+    </main>
+
+    <!-- Bottom nav -->
+    <nav class="bottom-nav" id="bottomNav">
+      <button type="button" class="nav-item active" data-nav="today">
+        <span class="nav-ico">📋</span>
+        <span>Log</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="calendar">
+        <span class="nav-ico">📅</span>
+        <span>Kalendārs</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="exercises">
+        <span class="nav-ico">💪</span>
+        <span>Vingr.</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="stats">
+        <span class="nav-ico">📈</span>
+        <span>Stats</span>
+      </button>
+    </nav>
+
+    <!-- Toast -->
+    <div class="toast hidden" id="toast" role="status"></div>
+
+    <!-- Rest timer overlay -->
+    <div class="rest-overlay hidden" id="restOverlay">
+      <div class="rest-card">
+        <p class="rest-label">Rest</p>
+        <p class="rest-time" id="restTime">1:30</p>
+        <div class="rest-actions">
+          <button type="button" class="btn ghost" id="restMinus">−15s</button>
+          <button type="button" class="btn primary" id="restSkip">Skip</button>
+          <button type="button" class="btn ghost" id="restPlus">+15s</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generic modal shell -->
+    <div class="modal-backdrop hidden" id="modalBackdrop">
+      <div class="modal" id="modal" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <h3 id="modalTitle">—</h3>
+          <button type="button" class="icon-btn" id="modalClose" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+        <div class="modal-foot" id="modalFoot"></div>
+      </div>
+    </div>
+
+    <!-- Logger full screen sheet -->
+    <div class="sheet hidden" id="loggerSheet">
+      <div class="sheet-head">
+        <button type="button" class="back-btn" id="loggerBack">← Atpakaļ</button>
+        <div class="sheet-titles">
+          <h2 id="loggerTitle">Exercise</h2>
+          <span class="sheet-meta" id="loggerMeta"></span>
+        </div>
+        <button type="button" class="icon-btn" id="loggerInfo" title="1RM info">ℹ</button>
+      </div>
+      <div class="logger-tabs">
+        <button type="button" class="ltab active" data-ltab="track">TRACK</button>
+        <button type="button" class="ltab" data-ltab="history">HISTORY</button>
+        <button type="button" class="ltab" data-ltab="graph">GRAPH</button>
+      </div>
+      <div class="sheet-body" id="loggerBody"></div>
+    </div>
+  </div>
+
+  <script src="app.js?v=110"></script>
+</body>
+</html>
