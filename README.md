@@ -14,6 +14,7 @@ Local-first PWA: dati paliek **tikai tavā ierīcē** (localStorage). Bez reklā
 - 📈 **Grafiki** — Estimated 1RM / svars / apjoms, vai laika vingrinājumiem seta laiks un dienas kopā
 - 🗂 **Backup** — JSON + CSV (FitNotes-compatible columns)
 - ⬆ **FitNotes CSV imports** — pārnes 400+ treniņus no FitNotes export
+- ↻ **Update** — poga augšā pārbauda versiju. Jaunā ielādējas tikai kad pats nospied **Atjaunināt** (nav piespiedu refresh).
 
 ## Migrācija no FitNotes
 1. FitNotes app → **Settings → Export → CSV** → saglabā `FitNotes_Export.csv`

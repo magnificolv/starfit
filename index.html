@@ -4,29 +4,30 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>StarFit — Workout Log</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=120" />
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=120" />
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=120" />
-  <link rel="manifest" href="manifest.json?v=120" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=121" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=121" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=121" />
+  <link rel="manifest" href="manifest.json?v=121" />
   <meta name="theme-color" content="#06060c" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="StarFit" />
   <meta name="description" content="Modern dark workout log — FitNotes spirit. Sets, calendar, graphs. Local-first." />
-  <link rel="stylesheet" href="style.css?v=120" />
+  <link rel="stylesheet" href="style.css?v=121" />
 </head>
 <body>
   <div id="app" class="app">
     <!-- Top bar -->
     <header class="topbar" id="topbar">
       <div class="brand" id="brandHome">
-        <img class="brand-mark" src="icons/brand-mark.png?v=120" width="32" height="32" alt="" />
+        <img class="brand-mark" src="icons/brand-mark.png?v=121" width="32" height="32" alt="" />
         <div class="brand-text">
           <span class="brand-title">Star<span class="accent">Fit</span></span>
           <span class="brand-sub" id="topSubtitle">Šodien</span>
         </div>
       </div>
       <div class="top-actions">
+        <button type="button" class="update-btn" id="btnUpdate" title="Pārbaudīt jauninājumus">Update</button>
         <button type="button" class="icon-btn" id="btnRest" title="Rest timer" aria-label="Rest timer">⏱</button>
         <button type="button" class="icon-btn" id="btnSettings" title="Iestatījumi" aria-label="Settings">⚙</button>
       </div>
@@ -121,6 +122,15 @@
       </div>
     </div>
 
+    <!-- Update available — never auto-reload -->
+    <div id="updateBanner" class="update-banner" role="status" aria-live="polite">
+      <div class="update-msg">Pieejama <b>jauna versija</b> <span id="updateVerLabel"></span>. Treniņš paliek, līdz pats atjaunini.</div>
+      <div class="update-actions">
+        <button type="button" class="btn ghost sm" id="btnUpdateLater">Vēlāk</button>
+        <button type="button" class="btn primary sm" id="btnApplyUpdate">↻ Atjaunināt</button>
+      </div>
+    </div>
+
     <!-- Logger full screen sheet -->
     <div class="sheet hidden" id="loggerSheet">
       <div class="sheet-head">
@@ -140,6 +150,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=120"></script>
+  <script src="app.js?v=121"></script>
 </body>
 </html>

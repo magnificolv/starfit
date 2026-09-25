@@ -1,7 +1,7 @@
 /* StarFit — workout log PWA (local-first) */
 'use strict';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 const STORE_KEY = 'starfit-v1';
 
 /* ============ Data helpers ============ */
@@ -1242,7 +1242,7 @@ function openSettings() {
         <button type="button" class="btn secondary" id="importBtn">⬆ Importēt StarFit JSON</button>
         <button type="button" class="btn danger" id="wipeBtn">Dzēst visus datus</button>
       </div>
-      <div class="note" style="margin-top:10px">Versija ${APP_VERSION} · localStorage · bez mākoņa.</div>
+      <div class="note" style="margin-top:10px">Versija ${APP_VERSION} · localStorage · bez mākoņa. Jaunā versija ielādējas tikai kad pats nospied <b>Update</b>.</div>
     </div>`,
     `<button type="button" class="btn primary" id="settingsDone">Gatavs</button>`);
 
@@ -1684,19 +1684,131 @@ function bindEvents() {
   });
 }
 
-/* ============ PWA / boot ============ */
-function registerSW() {
+/* ============ PWA / manual update (no forced reload) ============ */
+let _swRegistration = null;
+let _waitingWorker = null;
+let _updateDismissedFor = null;
+
+function showUpdateBanner(remoteVer) {
+  const ver = remoteVer || '';
+  if (_updateDismissedFor && _updateDismissedFor === (ver || 'pending')) return;
+  const label = $('updateVerLabel');
+  if (label) label.textContent = ver ? 'v' + ver : '';
+  const banner = $('updateBanner');
+  if (banner) banner.classList.add('show');
+  const btn = $('btnUpdate');
+  if (btn) btn.classList.add('has-update');
+}
+function hideUpdateBanner() {
+  const banner = $('updateBanner');
+  if (banner) banner.classList.remove('show');
+}
+function applyAppUpdate() {
+  if (_waitingWorker && navigator.serviceWorker) {
+    _waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    });
+    setTimeout(() => { if (!reloaded) window.location.reload(); }, 1500);
+    return;
+  }
+  const u = new URL(window.location.href);
+  u.searchParams.set('v', APP_VERSION + '-' + Date.now());
+  window.location.replace(u.toString());
+}
+async function checkRemoteVersion() {
   try {
-    if (typeof navigator !== 'undefined' && navigator.serviceWorker && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    const res = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && data.version ? String(data.version) : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function manualCheckForUpdate(fromButton) {
+  const btn = $('btnUpdate');
+  if (fromButton && btn) btn.classList.add('checking');
+  const remote = await checkRemoteVersion();
+  if (fromButton && btn) btn.classList.remove('checking');
+  if (remote && remote !== APP_VERSION) {
+    showUpdateBanner(remote);
+    if (_swRegistration) _swRegistration.update().catch(() => {});
+    if (fromButton) toast('Pieejama v' + remote + ' — spied Atjaunināt');
+    return true;
+  }
+  if (_swRegistration) {
+    try { await _swRegistration.update(); } catch (e) {}
+    if (_swRegistration.waiting && navigator.serviceWorker && navigator.serviceWorker.controller) {
+      _waitingWorker = _swRegistration.waiting;
+      showUpdateBanner(remote || '');
+      if (fromButton) toast('Pieejams atjauninājums');
+      return true;
     }
-  } catch (e) { /* ignore */ }
+  }
+  if (fromButton) {
+    toast('Jau aktuāls · v' + APP_VERSION);
+    if (btn) {
+      const prev = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = prev; }, 1600);
+    }
+  }
+  return false;
+}
+function initUpdates() {
+  const apply = $('btnApplyUpdate');
+  const later = $('btnUpdateLater');
+  if (apply) apply.addEventListener('click', applyAppUpdate);
+  if (later) later.addEventListener('click', () => {
+    checkRemoteVersion().then((v) => { _updateDismissedFor = v || 'pending'; });
+    hideUpdateBanner();
+  });
+  const btn = $('btnUpdate');
+  if (btn) btn.addEventListener('click', () => {
+    const banner = $('updateBanner');
+    if (banner && banner.classList.contains('show')) {
+      applyAppUpdate();
+      return;
+    }
+    manualCheckForUpdate(true);
+  });
+
+  const canSW = typeof navigator !== 'undefined' && navigator.serviceWorker && location.protocol.startsWith('http');
+  if (!canSW) {
+    manualCheckForUpdate(false);
+    return;
+  }
+  navigator.serviceWorker.register('./sw.js').then((reg) => {
+    _swRegistration = reg;
+    if (reg.waiting && navigator.serviceWorker.controller) {
+      _waitingWorker = reg.waiting;
+      checkRemoteVersion().then((v) => showUpdateBanner(v || ''));
+    }
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          _waitingWorker = nw;
+          checkRemoteVersion().then((v) => showUpdateBanner(v || ''));
+        }
+      });
+    });
+  }).catch(() => {});
+  setInterval(() => { manualCheckForUpdate(false); }, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') manualCheckForUpdate(false);
+  });
 }
 
 function boot() {
   bindEvents();
   switchView('today');
-  registerSW();
+  initUpdates();
 }
 
 document.addEventListener('DOMContentLoaded', boot);

@@ -130,6 +130,52 @@ button {
   background: var(--bg-soft);
   color: var(--text);
 }
+.update-btn {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.update-btn:active { background: var(--bg-soft); color: var(--text); }
+.update-btn.has-update {
+  color: #0c0c16;
+  border-color: transparent;
+  background: linear-gradient(115deg, #a78bfa, #e879f9);
+}
+.update-btn.checking { opacity: 0.55; }
+.update-banner {
+  display: none;
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(536px, calc(100% - 20px));
+  bottom: calc(var(--nav-h) + var(--safe-b) + 8px);
+  background: var(--bg-card);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: var(--shadow);
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.update-banner.show { display: flex; }
+.update-msg {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-dim);
+  flex: 1;
+  min-width: 160px;
+}
+.update-msg b { color: var(--text); }
+.update-actions { display: flex; gap: 8px; }
 
 /* Day strip */
 .day-strip {
