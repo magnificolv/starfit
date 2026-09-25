@@ -741,12 +741,46 @@ body[data-view="calendar"] .view-calendar {
   font-variant-numeric: tabular-nums;
   width: 100%;
 }
+.time-clock {
+  text-align: center;
+  font-size: 3.1rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  margin: 2px 0 12px;
+  background: linear-gradient(90deg, #c4b5fd, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.time-clock.live {
+  background: linear-gradient(90deg, #e879f9, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.time-hint {
+  text-align: center;
+  margin: -6px 0 14px;
+}
+.type-pills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.type-pills .pill {
+  text-align: center;
+  padding: 12px 8px;
+  border-radius: 14px;
+  font-size: 0.88rem;
+}
 .track-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin: 8px 0 20px;
 }
+.track-actions.single { grid-template-columns: 1fr; }
 .track-actions .btn { height: 52px; }
 .saved-sets { margin-top: 8px; }
 .saved-sets .set-row {

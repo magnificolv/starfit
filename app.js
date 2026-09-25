@@ -1,7 +1,7 @@
 /* StarFit — workout log PWA (local-first) */
 'use strict';
 
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.2.0';
 const STORE_KEY = 'starfit-v1';
 
 /* ============ Data helpers ============ */
@@ -71,6 +71,87 @@ const CAT_COLORS = {
   'forearms': '#c084fc', 'kardio': '#22d3ee', 'cits': '#9aa0b8'
 };
 
+/* Duration: seconds, "90", "1:30", "0:01:30" */
+function parseDuration(raw) {
+  if (raw == null || raw === '') return 0;
+  if (typeof raw === 'number' && !Number.isNaN(raw)) return Math.max(0, Math.round(raw));
+  const s = String(raw).trim();
+  if (!s) return 0;
+  if (/^\d+(\.\d+)?$/.test(s)) return Math.max(0, Math.round(parseFloat(s)));
+  const parts = s.split(':').map((p) => parseInt(p, 10));
+  if (!parts.length || parts.some((n) => Number.isNaN(n) || n < 0)) return 0;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return 0;
+}
+function setSeconds(s) {
+  if (!s) return 0;
+  if (s.seconds != null && s.seconds !== '') {
+    const n = Number(s.seconds);
+    if (!Number.isNaN(n) && n > 0) return Math.round(n);
+  }
+  return parseDuration(s.time);
+}
+function fmtDuration(sec) {
+  sec = Math.max(0, Math.round(Number(sec) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const ss = sec % 60;
+  if (h > 0) return `${h}:${pad(m)}:${pad(ss)}`;
+  return `${m}:${pad(ss)}`;
+}
+function fmtDurationExport(sec) {
+  sec = Math.max(0, Math.round(Number(sec) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return `${h}:${pad(m)}:${pad(sec % 60)}`;
+}
+function isTimeExercise(ex) {
+  return !!(ex && ex.type === 'time');
+}
+function displaySet(s, ex) {
+  const sec = setSeconds(s);
+  const hasLoad = Number(s && s.weight) > 0 || Number(s && s.reps) > 0;
+  if ((isTimeExercise(ex) && !hasLoad) || (sec > 0 && !hasLoad)) {
+    return { left: fmtDuration(sec), right: 'laiks', timed: true, seconds: sec };
+  }
+  return {
+    left: `${fmtW(s ? s.weight : 0)} ${db.settings.unit}`,
+    right: `${s && s.reps != null ? s.reps : 0} reps`,
+    timed: false,
+    seconds: 0
+  };
+}
+function migrateTimeExercises(d) {
+  let changed = false;
+  const stats = {};
+  (d.exercises || []).forEach((e) => {
+    if (!e.type) { e.type = 'resistance'; changed = true; }
+    stats[e.id] = { time: 0, weight: 0 };
+  });
+  Object.values(d.workouts || {}).forEach((w) => {
+    (w.exercises || []).forEach((entry) => {
+      const st = stats[entry.exerciseId];
+      (entry.sets || []).forEach((s) => {
+        const sec = setSeconds(s);
+        const hasLoad = Number(s.weight) > 0 || Number(s.reps) > 0;
+        if (sec > 0 && !hasLoad) {
+          if (st) st.time++;
+          if (s.seconds == null) { s.seconds = sec; changed = true; }
+        } else if (hasLoad && st) st.weight++;
+      });
+    });
+  });
+  (d.exercises || []).forEach((e) => {
+    const st = stats[e.id];
+    if (st && e.type !== 'time' && st.time > 0 && st.weight === 0) {
+      e.type = 'time';
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 /* ============ State ============ */
 let db = loadDB();
 let state = {
@@ -82,6 +163,7 @@ let state = {
   exSearch: '',
   logger: null, // { exerciseId, tab }
   rest: { t: 0, iv: null },
+  work: { exerciseId: null, running: false, startedAt: 0, baseSec: 0, iv: null },
   lastSave: null
 };
 
@@ -90,7 +172,10 @@ function loadDB() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      if (d && d.version === 1 && Array.isArray(d.exercises)) return d;
+      if (d && d.version === 1 && Array.isArray(d.exercises)) {
+        if (migrateTimeExercises(d)) saveDB(d);
+        return d;
+      }
     }
   } catch (e) { /* corrupt */ }
   const d = {
@@ -129,6 +214,66 @@ function addSetToWorkout(iso, exerciseId, weight, reps, note) {
   }
   entry.sets.push({ weight, reps, note: note || '', ts: Date.now() });
   saveDB();
+}
+function addTimeSetToWorkout(iso, exerciseId, seconds, note) {
+  const sec = Math.max(0, Math.round(Number(seconds) || 0));
+  const w = ensureWorkout(iso);
+  let entry = w.exercises.find((e) => e.exerciseId === exerciseId);
+  if (!entry) {
+    entry = { exerciseId, order: w.exercises.length, sets: [] };
+    w.exercises.push(entry);
+  }
+  entry.sets.push({
+    seconds: sec,
+    time: fmtDurationExport(sec),
+    weight: 0,
+    reps: 0,
+    note: note || '',
+    ts: Date.now()
+  });
+  saveDB();
+}
+function dayTotalSeconds(iso) {
+  const w = workoutOf(iso);
+  if (!w) return 0;
+  let sec = 0;
+  w.exercises.forEach((e) => {
+    const ex = exById(e.exerciseId);
+    e.sets.forEach((s) => {
+      if (displaySet(s, ex).timed) sec += setSeconds(s);
+    });
+  });
+  return sec;
+}
+
+function workElapsed() {
+  if (!state.work.running) return state.work.baseSec || 0;
+  return (state.work.baseSec || 0) + Math.max(0, Math.floor((Date.now() - state.work.startedAt) / 1000));
+}
+function stopWorkTimer(keepElapsed) {
+  if (state.work.running && keepElapsed !== false) state.work.baseSec = workElapsed();
+  state.work.running = false;
+  state.work.startedAt = 0;
+  if (state.work.iv) clearInterval(state.work.iv);
+  state.work.iv = null;
+}
+function startWorkTimer(exerciseId, baseSec) {
+  stopWorkTimer(false);
+  state.work.exerciseId = exerciseId;
+  state.work.baseSec = Math.max(0, Math.round(baseSec || 0));
+  state.work.startedAt = Date.now();
+  state.work.running = true;
+  state.work.iv = setInterval(() => {
+    const clock = document.getElementById('timeClock');
+    if (!clock) return;
+    const sec = workElapsed();
+    clock.textContent = fmtDuration(sec);
+    clock.classList.add('live');
+    const mi = document.getElementById('mInput');
+    const si = document.getElementById('sInput');
+    if (mi && document.activeElement !== mi) mi.value = String(Math.floor(sec / 60));
+    if (si && document.activeElement !== si) si.value = String(sec % 60);
+  }, 250);
 }
 
 function dayTotalVolume(iso) {
@@ -289,8 +434,8 @@ function renderToday() {
     const rows = entry.sets.map((s, si) => `
       <div class="set-row">
         <span class="set-n">${si + 1}</span>
-        <span class="set-w">${fmtW(s.weight)} ${db.settings.unit}</span>
-        <span class="set-r">${s.reps} reps</span>
+        <span class="set-w">${esc(displaySet(s, ex).left)}</span>
+        <span class="set-r">${esc(displaySet(s, ex).right)}</span>
         <button type="button" class="set-del" data-ex="${entry.exerciseId}" data-set="${si}" aria-label="Dzēst setu">✕</button>
       </div>`).join('');
     return `
@@ -309,8 +454,10 @@ function renderToday() {
   }).join('');
 
   const vol = dayTotalVolume(iso);
+  const tsec = dayTotalSeconds(iso);
+  const timeBit = tsec > 0 ? ` · laiks <b>${fmtDuration(tsec)}</b>` : '';
   els.todayContent.innerHTML = `
-    <div class="volume-chip">Kopējais apjoms: <b>${fmtW(vol)} ${db.settings.unit}</b> · ${w.exercises.reduce((a, e) => a + e.sets.length, 0)} seti</div>
+    <div class="volume-chip">Kopējais apjoms: <b>${fmtW(vol)} ${db.settings.unit}</b>${timeBit} · ${w.exercises.reduce((a, e) => a + e.sets.length, 0)} seti</div>
     ${cards}
     <div class="fab-row">
       <button type="button" class="btn primary block" id="addExBtn">＋ Pievienot vingrinājumu</button>
@@ -386,7 +533,7 @@ function pickExercise() {
       <button type="button" class="list-row" data-pick="${e.id}">
         <span class="ex-dot" style="background:${c.color}; color:${c.color}"></span>
         <span class="grow">${esc(e.name)}</span>
-        ${already.has(e.id) ? '<span class="meta">✓</span>' : ''}
+        <span class="meta">${e.type === 'time' ? '⏱ ' : ''}${already.has(e.id) ? '✓' : ''}</span>
       </button>`).join('');
     return `<div class="section-title">${esc(c.name)}</div><div class="ex-list">${items}</div>`;
   }).join('');
@@ -407,16 +554,30 @@ function pickExercise() {
 }
 
 /* ============ Logger ============ */
+function refreshLoggerHeader() {
+  const lg = state.logger;
+  if (!lg) return;
+  const ex = exById(lg.exerciseId);
+  if (!ex) return;
+  els.loggerTitle.textContent = ex.name;
+  const cat = catById(ex.categoryId);
+  const sets = allSetsFor(lg.exerciseId);
+  if (isTimeExercise(ex)) {
+    const best = sets.reduce((m, s) => Math.max(m, setSeconds(s)), 0);
+    els.loggerMeta.textContent = `${cat.name} · ${sets.length} seti · labākais ${fmtDuration(best)}`;
+  } else {
+    const best = setBest1RM(lg.exerciseId);
+    els.loggerMeta.textContent = `${cat.name} · ${sets.length} seti · 1RM ${fmtW(best)} kg`;
+  }
+}
 function openLogger(exerciseId, focusTrack = false) {
   const ex = exById(exerciseId);
   if (!ex) return;
-  state.logger = { exerciseId, tab: focusTrack ? 'track' : 'history' };
+  if (state.work.running && state.work.exerciseId && state.work.exerciseId !== exerciseId) stopWorkTimer(true);
+  state.logger = { exerciseId, tab: focusTrack ? 'track' : (state.logger && state.logger.exerciseId === exerciseId ? state.logger.tab : 'history') };
+  if (focusTrack) state.logger.tab = 'track';
   els.loggerSheet.classList.remove('hidden');
-  els.loggerTitle.textContent = ex.name;
-  const cat = catById(ex.categoryId);
-  const sets = allSetsFor(exerciseId);
-  const best = setBest1RM(exerciseId);
-  els.loggerMeta.textContent = `${cat.name} · ${sets.length} seti · 1RM ${fmtW(best)} kg`;
+  refreshLoggerHeader();
   renderLoggerTab();
 }
 
@@ -434,14 +595,50 @@ function renderLoggerTab() {
   else renderGraph();
 }
 
+function savedSetsHTML(sets, ex, withDelete) {
+  if (!sets.length) return '<p class="note">Nav saglabātu setu.</p>';
+  return sets.map((s, i) => {
+    const d = displaySet(s, ex);
+    const del = withDelete
+      ? `<span class="set-del" data-del="${s.iso}|${s.setIndex - 1}" title="Dzēst">✕</span>`
+      : '';
+    return `<div class="set-row">
+      <span class="set-n">${s.setIndex || (i + 1)}</span>
+      <span class="set-w">${esc(d.left)}</span>
+      <span class="set-r">${esc(d.right)}</span>
+      ${del}
+    </div>`;
+  }).join('');
+}
+function bindSetDeletes(exerciseId, after) {
+  els.loggerBody.querySelectorAll('[data-del]').forEach((el) =>
+    el.addEventListener('click', () => {
+      const [iso, idx] = el.dataset.del.split('|');
+      const w = workoutOf(iso);
+      if (!w) return;
+      const entry = w.exercises.find((e) => e.exerciseId === exerciseId);
+      if (!entry) return;
+      entry.sets.splice(Number(idx), 1);
+      if (entry.sets.length === 0) {
+        w.exercises = w.exercises.filter((e) => e.exerciseId !== exerciseId);
+      }
+      if (w.exercises.length === 0) delete db.workouts[iso];
+      saveDB();
+      after();
+    }));
+}
 function renderTrack() {
   const lg = state.logger;
+  const ex = exById(lg.exerciseId);
+  if (isTimeExercise(ex)) renderTimeTrack(ex);
+  else renderLoadTrack(ex);
+}
+function renderLoadTrack(ex) {
+  const lg = state.logger;
   const sets = allSetsFor(lg.exerciseId);
-  const w = workoutOf(todayISO());
-  const todayEntry = w ? w.exercises.find((e) => e.exerciseId === lg.exerciseId) : null;
   const last = sets.length ? sets[sets.length - 1] : null;
   const weight = last ? fmtW(last.weight) : '';
-  const reps = last ? String(last.reps) : '';
+  const reps = last ? String(last.reps || '') : '';
   els.loggerBody.innerHTML = `
     <div class="stepper-block">
       <label>SVARS (${db.settings.unit})</label>
@@ -463,15 +660,7 @@ function renderTrack() {
       <button type="button" class="btn primary" id="saveSetBtn">SAVE</button>
       <button type="button" class="btn secondary" id="clearBtn">CLEAR</button>
     </div>
-    <div class="saved-sets" id="savedSets">
-      ${sets.length ? sets.map((s, i) => `
-        <div class="set-row">
-          <span class="set-n">${i + 1}</span>
-          <span class="set-w">${fmtW(s.weight)} ${db.settings.unit}</span>
-          <span class="set-r">${s.reps} reps</span>
-          <span class="set-del" data-del="${s.iso}|${s.setIndex - 1}" title="Dzēst">✕</span>
-        </div>`).join('') : '<p class="note">Nav saglabātu setu.</p>'}
-    </div>`;
+    <div class="saved-sets" id="savedSets">${savedSetsHTML(sets, ex, true)}</div>`;
 
   const wInput = $('wInput'), rInput = $('rInput');
   const bump = (input, delta) => {
@@ -491,32 +680,115 @@ function renderTrack() {
     const entry = ensureWorkout(iso).exercises.find((e) => e.exerciseId === lg.exerciseId);
     const had = entry && entry.sets.length > 0;
     addSetToWorkout(iso, lg.exerciseId, weight, reps, '');
-    saveDB();
     toast('Training saved');
-    renderTrack();
+    refreshLoggerHeader();
+    renderLoadTrack(ex);
     renderToday();
     if (db.settings.timerOn && db.settings.restSeconds > 0 && had) startRest(db.settings.restSeconds);
   });
-  els.loggerBody.querySelectorAll('[data-del]').forEach((el) =>
-    el.addEventListener('click', () => {
-      const [iso, idx] = el.dataset.del.split('|');
-      const w = workoutOf(iso);
-      if (!w) return;
-      const entry = w.exercises.find((e) => e.exerciseId === lg.exerciseId);
-      if (!entry) return;
-      entry.sets.splice(Number(idx), 1);
-      if (entry.sets.length === 0) {
-        w.exercises = w.exercises.filter((e) => e.exerciseId !== lg.exerciseId);
-      }
-      if (w.exercises.length === 0) delete db.workouts[iso];
-      saveDB();
-      renderTrack();
-      renderToday();
-    }));
+  bindSetDeletes(lg.exerciseId, () => { refreshLoggerHeader(); renderLoadTrack(ex); renderToday(); });
+}
+function renderTimeTrack(ex) {
+  const lg = state.logger;
+  const sets = allSetsFor(lg.exerciseId);
+  const last = [...sets].reverse().find((s) => displaySet(s, ex).timed) || null;
+  let sec = last ? setSeconds(last) : 0;
+  if (state.work.exerciseId === lg.exerciseId && (state.work.running || state.work.baseSec)) sec = workElapsed();
+  const running = !!(state.work.running && state.work.exerciseId === lg.exerciseId);
+  els.loggerBody.innerHTML = `
+    <div class="time-clock ${running ? 'live' : ''}" id="timeClock">${fmtDuration(sec)}</div>
+    <p class="note time-hint">Sāc taimeri, karājies, apturi — vai ievadi laiku pats.</p>
+    <div class="track-actions single">
+      <button type="button" class="btn ${running ? 'secondary' : 'primary'}" id="workToggle">${running ? '■ Apturēt' : '▶ Sākt taimeri'}</button>
+    </div>
+    <div class="stepper-block">
+      <label>MINŪTES</label>
+      <div class="stepper">
+        <button type="button" id="mMinus">−</button>
+        <input id="mInput" type="number" inputmode="numeric" step="1" min="0" value="${Math.floor(sec / 60)}">
+        <button type="button" id="mPlus">＋</button>
+      </div>
+    </div>
+    <div class="stepper-block">
+      <label>SEKUNDES</label>
+      <div class="stepper">
+        <button type="button" id="sMinus">−</button>
+        <input id="sInput" type="number" inputmode="numeric" step="1" min="0" value="${sec % 60}">
+        <button type="button" id="sPlus">＋</button>
+      </div>
+    </div>
+    <div class="track-actions">
+      <button type="button" class="btn primary" id="saveSetBtn">SAVE</button>
+      <button type="button" class="btn secondary" id="clearBtn">CLEAR</button>
+    </div>
+    <div class="saved-sets">${savedSetsHTML(sets, ex, true)}</div>`;
+
+  const readSec = () => {
+    const m = Math.max(0, parseInt($('mInput').value, 10) || 0);
+    const s = Math.max(0, parseInt($('sInput').value, 10) || 0);
+    return m * 60 + s;
+  };
+  const writeSec = (total) => {
+    total = Math.max(0, Math.round(total));
+    $('mInput').value = String(Math.floor(total / 60));
+    $('sInput').value = String(total % 60);
+    const clock = $('timeClock');
+    if (clock) clock.textContent = fmtDuration(total);
+  };
+  const nudge = (delta) => {
+    if (running) {
+      state.work.baseSec = Math.max(0, workElapsed() + delta);
+      state.work.startedAt = Date.now();
+      writeSec(workElapsed());
+      return;
+    }
+    writeSec(readSec() + delta);
+  };
+  $('mMinus').addEventListener('click', () => nudge(-60));
+  $('mPlus').addEventListener('click', () => nudge(60));
+  $('sMinus').addEventListener('click', () => nudge(-5));
+  $('sPlus').addEventListener('click', () => nudge(5));
+  $('mInput').addEventListener('change', () => { stopWorkTimer(false); writeSec(readSec()); });
+  $('sInput').addEventListener('change', () => { stopWorkTimer(false); writeSec(readSec()); });
+  $('clearBtn').addEventListener('click', () => {
+    stopWorkTimer(false);
+    state.work.baseSec = 0;
+    state.work.exerciseId = lg.exerciseId;
+    writeSec(0);
+    const clock = $('timeClock');
+    if (clock) clock.classList.remove('live');
+  });
+  $('workToggle').addEventListener('click', () => {
+    if (running) {
+      stopWorkTimer(true);
+      renderTimeTrack(ex);
+      return;
+    }
+    startWorkTimer(lg.exerciseId, readSec());
+    renderTimeTrack(ex);
+  });
+  $('saveSetBtn').addEventListener('click', () => {
+    const seconds = running ? workElapsed() : readSec();
+    if (!(seconds >= 1)) { toast('Ievadi laiku'); return; }
+    stopWorkTimer(false);
+    state.work.baseSec = seconds;
+    state.work.exerciseId = lg.exerciseId;
+    const iso = todayISO();
+    const entry = ensureWorkout(iso).exercises.find((e) => e.exerciseId === lg.exerciseId);
+    const had = entry && entry.sets.length > 0;
+    addTimeSetToWorkout(iso, lg.exerciseId, seconds, '');
+    toast('Laiks saglabāts');
+    refreshLoggerHeader();
+    renderTimeTrack(ex);
+    renderToday();
+    if (db.settings.timerOn && db.settings.restSeconds > 0 && had) startRest(db.settings.restSeconds);
+  });
+  bindSetDeletes(lg.exerciseId, () => { refreshLoggerHeader(); renderTimeTrack(ex); renderToday(); });
 }
 
 function renderHistory() {
   const lg = state.logger;
+  const ex = exById(lg.exerciseId);
   const sets = allSetsFor(lg.exerciseId);
   if (!sets.length) {
     els.loggerBody.innerHTML = '<p class="note">Nav vēstures.</p>';
@@ -528,30 +800,28 @@ function renderHistory() {
   els.loggerBody.innerHTML = days.map((iso) => `
     <div class="hist-day">
       <h4>${weekdayLat(parseISO(iso)).toUpperCase()}, ${fmtShort(iso)}</h4>
-      ${byDay[iso].map((s) => `
-        <div class="set-row">
-          <span class="set-n">${s.setIndex}</span>
-          <span class="set-w">${fmtW(s.weight)} ${db.settings.unit}</span>
-          <span class="set-r">${s.reps} reps</span>
-        </div>`).join('')}
+      ${savedSetsHTML(byDay[iso], ex, false)}
     </div>`).join('');
 }
 
 function renderGraph() {
   const lg = state.logger;
+  const ex = exById(lg.exerciseId);
   const sets = allSetsFor(lg.exerciseId);
+  const timed = isTimeExercise(ex);
   if (!sets.length) {
     els.loggerBody.innerHTML = '<p class="note">Nav datu grafikam.</p>';
     return;
   }
-  els.loggerBody.innerHTML = `
-    <div class="graph-controls">
-      <select id="gMetric" class="select">
-        <option value="1rm">Estimated 1RM</option>
+  const metricOpts = timed
+    ? `<option value="time">Seta laiks</option><option value="timetot">Dienas kopā</option>`
+    : `<option value="1rm">Estimated 1RM</option>
         <option value="maxw">Max Weight</option>
         <option value="vol">Volume</option>
-        <option value="reps">Max Reps</option>
-      </select>
+        <option value="reps">Max Reps</option>`;
+  els.loggerBody.innerHTML = `
+    <div class="graph-controls">
+      <select id="gMetric" class="select">${metricOpts}</select>
       <select id="gRange" class="select">
         <option value="all">All time</option>
         <option value="1m">1 month</option>
@@ -584,13 +854,25 @@ function drawGraph(sets, metric, range) {
   if (!ctx) return;
   ctx.scale(dpr, dpr);
 
-  let data = sets.map((s) => {
-    const val = metric === '1rm' ? epley1RM(s.weight, s.reps)
-      : metric === 'maxw' ? (s.weight || 0)
-      : metric === 'vol' ? (s.weight || 0) * (s.reps || 0)
-      : (s.reps || 0);
-    return { x: parseISO(s.iso).getTime(), y: val, iso: s.iso, w: s.weight, r: s.reps };
-  });
+  const timedMetric = metric === 'time' || metric === 'timetot';
+  let data;
+  if (metric === 'timetot') {
+    const byDay = {};
+    sets.forEach((s) => {
+      if (!byDay[s.iso]) byDay[s.iso] = { x: parseISO(s.iso).getTime(), y: 0, iso: s.iso };
+      byDay[s.iso].y += setSeconds(s);
+    });
+    data = Object.values(byDay).sort((a, b) => a.x - b.x);
+  } else {
+    data = sets.map((s) => {
+      const val = metric === 'time' ? setSeconds(s)
+        : metric === '1rm' ? epley1RM(s.weight, s.reps)
+        : metric === 'maxw' ? (s.weight || 0)
+        : metric === 'vol' ? (s.weight || 0) * (s.reps || 0)
+        : (s.reps || 0);
+      return { x: parseISO(s.iso).getTime(), y: val, iso: s.iso, w: s.weight, r: s.reps };
+    });
+  }
 
   if (range !== 'all') {
     const months = { '1m': 1, '3m': 3, '1y': 12 }[range];
@@ -629,7 +911,7 @@ function drawGraph(sets, metric, range) {
     ctx.lineTo(W - 12, y);
     ctx.stroke();
     const val = minY + ((4 - i) / 4) * (maxY - minY);
-    ctx.fillText(fmtW(val), 34, y + 3);
+    ctx.fillText(timedMetric ? fmtDuration(val) : fmtW(val), 34, y + 3);
   }
 
   // area
@@ -747,12 +1029,14 @@ function showDaySheet(iso) {
   const blocks = w.exercises.map((entry) => {
     const ex = exById(entry.exerciseId);
     const cat = ex ? catById(ex.categoryId) : { color: '#9aa0b8' };
-    const sets = entry.sets.map((s) =>
-      `<div class="set-row">
+    const sets = entry.sets.map((s) => {
+      const d = displaySet(s, ex);
+      return `<div class="set-row">
         <span class="set-n"></span>
-        <span class="set-w">${fmtW(s.weight)} ${db.settings.unit}</span>
-        <span class="set-r">${s.reps} reps</span>
-      </div>`).join('');
+        <span class="set-w">${esc(d.left)}</span>
+        <span class="set-r">${esc(d.right)}</span>
+      </div>`;
+    }).join('');
     return `<div class="wo-ex">
       <div class="wo-ex-name"><span class="ex-dot" style="background:${cat.color}; color:${cat.color}"></span>${esc(ex ? ex.name : '?')}</div>
       <div class="wo-ex-sets">${sets}</div>
@@ -782,7 +1066,7 @@ function renderExerciseBrowser() {
           <button type="button" class="list-row" data-open="${e.id}">
             <span class="ex-dot" style="background:${cat.color}; color:${cat.color}"></span>
             <span class="grow">${esc(e.name)}</span>
-            <span class="meta">${allSetsFor(e.id).length} seti</span>
+            <span class="meta">${e.type === 'time' ? '⏱ ' : ''}${allSetsFor(e.id).length} seti</span>
           </button>
         </div>`).join('') || '<p class="note">Nav atbilstošu vingrinājumu.</p>'}
       <button type="button" class="btn secondary block" id="addExNew" style="margin-top:12px">＋ Jauns vingrinājums</button>`;
@@ -804,7 +1088,7 @@ function renderExerciseBrowser() {
       <button type="button" class="list-row" data-open="${e.id}">
         <span class="ex-dot" style="background:${c.color}; color:${c.color}"></span>
         <span class="grow">${esc(e.name)}</span>
-        <span class="meta">${allSetsFor(e.id).length}</span>
+        <span class="meta">${e.type === 'time' ? '⏱ ' : ''}${allSetsFor(e.id).length}</span>
       </button>`).join('');
     return `<div class="section-title" style="margin-top:10px">${esc(c.name)}</div>
       <div class="ex-list">${items || (q ? '' : '<span class="note">Tukšs</span>')}</div>`;
@@ -818,23 +1102,40 @@ function renderExerciseBrowser() {
 function addExerciseModal(presetCat) {
   const opts = db.categories.map((c) =>
     `<option value="${c.id}" ${c.id === presetCat ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  let kind = 'resistance';
   openModal('Jauns vingrinājums', `
-    <div class="form-row"><label>Nosaukums</label><input id="newExName" placeholder="e.g. Bench Press" autocomplete="off"></div>
-    <div class="form-row"><label>Kategorija</label><select id="newExCat">${opts}</select></div>`,
+    <div class="form-row"><label>Nosaukums</label><input id="newExName" placeholder="piem. Karāšanās pie stieņa" autocomplete="off"></div>
+    <div class="form-row"><label>Kategorija</label><select id="newExCat">${opts}</select></div>
+    <div class="form-row"><label>Tips</label>
+      <div class="type-pills" id="newExType">
+        <button type="button" class="pill on" data-kind="resistance">Svars + reps</button>
+        <button type="button" class="pill" data-kind="time">⏱ Laiks</button>
+      </div>
+      <p class="note" id="newExHint">Klasiskais logs: kilogrami un atkārtojumi.</p>
+    </div>`,
     `<button type="button" class="btn primary" id="newExSave">Saglabāt</button>
      <button type="button" class="btn ghost" id="newExCancel">Cancel</button>`);
+  els.modalBody.querySelectorAll('[data-kind]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      kind = btn.dataset.kind;
+      els.modalBody.querySelectorAll('[data-kind]').forEach((b) => b.classList.toggle('on', b === btn));
+      $('newExHint').textContent = kind === 'time'
+        ? 'Sekundes, nevis svars. Karāšanās, plank, turēšana.'
+        : 'Klasiskais logs: kilogrami un atkārtojumi.';
+    });
+  });
   $('newExSave').addEventListener('click', () => {
     const name = $('newExName').value.trim();
     if (!name) { toast('Ievadi nosaukumu'); return; }
-    const ex = { id: uid(), name, categoryId: $('newExCat').value, type: 'resistance' };
+    const ex = { id: uid(), name, categoryId: $('newExCat').value, type: kind === 'time' ? 'time' : 'resistance' };
     db.exercises.push(ex);
     saveDB();
     closeModal();
     renderExerciseBrowser();
-    toast('Vingrinājums pievienots');
+    toast(ex.type === 'time' ? 'Laika vingrinājums pievienots' : 'Vingrinājums pievienots');
   });
   $('newExCancel').addEventListener('click', closeModal);
-  setTimeout(() => $('newExName').focus(), 50);
+  setTimeout(() => { const el = $('newExName'); if (el) el.focus(); }, 50);
 }
 
 /* ============ Stats ============ */
@@ -870,6 +1171,25 @@ function renderStats() {
           </div>`;
         }).join('')}
       </div>` : ''}
+    ${(() => {
+      const holds = db.exercises.filter((e) => e.type === 'time').map((e) => {
+        const best = allSetsFor(e.id).reduce((m, s) => Math.max(m, setSeconds(s)), 0);
+        return [e.id, best];
+      }).filter(([, b]) => b > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      if (!holds.length) return '';
+      return `<div class="section-title" style="margin-top:14px">Garākie turējumi</div>
+        <div class="recent-list">
+          ${holds.map(([id, v]) => {
+            const ex = exById(id);
+            const cat = ex ? catById(ex.categoryId) : null;
+            return `<div class="list-row">
+              ${cat ? `<span class="ex-dot" style="background:${cat.color}; color:${cat.color}"></span>` : ''}
+              <span class="grow">${esc(ex ? ex.name : '?')}</span>
+              <span class="meta">⏱ ${fmtDuration(v)}</span>
+            </div>`;
+          }).join('')}
+        </div>`;
+    })()}
     <div class="section-title" style="margin-top:14px">Pēdējie treniņi</div>
     <div class="recent-list">
       ${recent.length ? recent.map((iso) => {
@@ -984,6 +1304,8 @@ function exportCSV() {
       const ex = exById(e.exerciseId);
       const cat = ex ? catById(ex.categoryId) : { name: '' };
       e.sets.forEach((s) => {
+        const sec = setSeconds(s);
+        const timeOut = sec > 0 ? fmtDurationExport(sec) : (s.time || '');
         rows.push([
           iso,
           ex ? ex.name : e.exerciseId,
@@ -993,7 +1315,7 @@ function exportCSV() {
           s.reps != null ? s.reps : '',
           s.distance != null ? s.distance : '',
           s.distanceUnit || '',
-          s.time || ''
+          timeOut
         ]);
       });
     });
@@ -1167,13 +1489,21 @@ function runFitNotesImport(parsed, mode) {
 
       const weightRaw = r.Weight != null && r.Weight !== '' ? r.Weight : (r.weight || '0');
       const unit = r['Weight Unit'] || r['Weight unit'] || r.weight_unit || 'kgs';
-      const repsRaw = r.Reps != null && r.Reps !== '' ? r.Reps : (r.reps || '0');
+      const repsRaw = r.Reps != null && r.Reps !== '' ? r.Reps : (r.reps != null ? r.reps : '');
       const weight = toKg(weightRaw, unit);
-      const reps = parseInt(repsRaw, 10);
+      const repsBlank = repsRaw === '' || repsRaw == null;
+      const reps = repsBlank ? 0 : parseInt(repsRaw, 10);
       if (Number.isNaN(reps) || reps < 0) { skipped++; return; }
+
+      const timeRaw = String(r.Time || r.time || '').trim();
+      const sec = parseDuration(timeRaw);
+      const hasLoad = weight > 0 || reps > 0;
+      const timedSet = sec > 0 && !hasLoad;
 
       const ex = resolveExercise(exercise, category);
       if (!ex) { skipped++; return; }
+      if (timedSet) ex._importTime = (ex._importTime || 0) + 1;
+      else if (hasLoad) ex._importLoad = (ex._importLoad || 0) + 1;
 
       const w = ensureWorkout(date);
       if (!orderMap[date]) orderMap[date] = [];
@@ -1183,19 +1513,21 @@ function runFitNotesImport(parsed, mode) {
         w.exercises.push(entry);
         orderMap[date].push(ex.id);
       }
-      entry.sets.push({
-        weight,
-        reps,
+      const setObj = {
+        weight: timedSet ? 0 : weight,
+        reps: timedSet ? 0 : reps,
         note: '',
-        ts: Date.parse(date + 'T12:00:00') + idx, // stable order within day
-        distance: (r.Distance || r.distance || '') || undefined,
-        distanceUnit: (r['Distance Unit'] || r.distance_unit || '') || undefined,
-        time: (r.Time || r.time || '') || undefined
-      });
-      // clean undefined keys
-      Object.keys(entry.sets[entry.sets.length - 1]).forEach((k) => {
-        if (entry.sets[entry.sets.length - 1][k] === undefined) delete entry.sets[entry.sets.length - 1][k];
-      });
+        ts: Date.parse(date + 'T12:00:00') + idx
+      };
+      if (sec > 0) {
+        setObj.seconds = sec;
+        setObj.time = fmtDurationExport(sec);
+      } else if (timeRaw) setObj.time = timeRaw;
+      const dist = (r.Distance || r.distance || '').trim();
+      const distUnit = (r['Distance Unit'] || r.distance_unit || '').trim();
+      if (dist) setObj.distance = dist;
+      if (distUnit) setObj.distanceUnit = distUnit;
+      entry.sets.push(setObj);
       imported++;
     });
 
@@ -1204,6 +1536,12 @@ function runFitNotesImport(parsed, mode) {
       const w = db.workouts[iso];
       w.exercises = w.exercises.filter((e) => e.sets && e.sets.length);
       if (!w.exercises.length) delete db.workouts[iso];
+    });
+
+    db.exercises.forEach((ex) => {
+      if ((ex._importTime || 0) > 0 && !(ex._importLoad > 0)) ex.type = 'time';
+      delete ex._importTime;
+      delete ex._importLoad;
     });
 
     saveDB();
@@ -1303,9 +1641,33 @@ function bindEvents() {
     t.addEventListener('click', () => { if (state.logger) { state.logger.tab = t.dataset.ltab; renderLoggerTab(); } }));
   $('loggerInfo').addEventListener('click', () => {
     if (!state.logger) return;
-    openModal('1RM', `<p class="note">Estimated 1RM = svars × (1 + atkārtojumi/30) (Epley formula).<br>Labākais aprēķinātais 1RM visiem taviem setiem.</p>`,
-      `<button type="button" class="btn primary" id="infoOk">OK</button>`);
-    $('infoOk').addEventListener('click', closeModal);
+    const ex = exById(state.logger.exerciseId);
+    if (!ex) return;
+    const paint = () => {
+      const timed = ex.type === 'time';
+      openModal('Vingrinājums', `
+        <div class="form-row"><label>${esc(ex.name)}</label>
+          <div class="type-pills">
+            <button type="button" class="pill ${timed ? '' : 'on'}" data-kind="resistance">Svars + reps</button>
+            <button type="button" class="pill ${timed ? 'on' : ''}" data-kind="time">⏱ Laiks</button>
+          </div>
+          <p class="note" id="infoHint">${timed
+            ? 'Logots sekundēs. TRACK rāda taimeri, nevis svaru.'
+            : 'Estimated 1RM = svars × (1 + atkārtojumi/30).'}</p>
+        </div>`,
+        `<button type="button" class="btn primary" id="infoOk">Gatavs</button>`);
+      els.modalBody.querySelectorAll('[data-kind]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          ex.type = btn.dataset.kind === 'time' ? 'time' : 'resistance';
+          saveDB();
+          refreshLoggerHeader();
+          if (state.logger) renderLoggerTab();
+          paint();
+        });
+      });
+      $('infoOk').addEventListener('click', closeModal);
+    };
+    paint();
   });
 
   // rest

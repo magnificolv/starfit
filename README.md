@@ -6,11 +6,12 @@ Local-first PWA: dati paliek **tikai tavā ierīcē** (localStorage). Bez reklā
 **Live:** pēc GitHub Pages ieslēgšanas → `https://magnificolv.github.io/starfit/`
 
 ## Features
-- 📋 **Daily log** — seti (svars × atkārtojumi), dienu pārslēgšana, *Start New* / *Copy Previous*
+- 📋 **Daily log** — seti (svars × atkārtojumi **vai laiks**), dienu pārslēgšana, *Start New* / *Copy Previous*
+- ⏱ **Laika vingrinājumi** — karāšanās, plank, turēšana. Taimeris + minūtes/sekundes. FitNotes šo slēpj aiz maksas.
 - 📅 **Kalendārs** — krāsaini punkti pa muskuļu grupām
-- 💪 **Vingrinājumi** — kategorijas, meklēšana, pašu pievienošana
+- 💪 **Vingrinājumi** — kategorijas, meklēšana, pašu pievienošana, tips (svars vai laiks)
 - ⏱ **Rest timer**
-- 📈 **Grafiki** — Estimated 1RM, Max Weight, Volume, Max Reps
+- 📈 **Grafiki** — Estimated 1RM / svars / apjoms, vai laika vingrinājumiem seta laiks un dienas kopā
 - 🗂 **Backup** — JSON + CSV (FitNotes-compatible columns)
 - ⬆ **FitNotes CSV imports** — pārnes 400+ treniņus no FitNotes export
 

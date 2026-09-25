@@ -1,5 +1,5 @@
 /* StarFit service worker — offline shell */
-const CACHE = 'starfit-v1.1.2';
+const CACHE = 'starfit-v1.2.0';
 const ASSETS = [
   './',
   './index.html',
